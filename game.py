@@ -161,26 +161,26 @@ class GameEnvironment:
 
         return new_grid, score_gained
 
-    def get_valid_actions(self):
+    def get_valid_actions(self, grid):
         actions = ["LEFT", "RIGHT", "UP", "DOWN"]
 
         return [
             action for action in actions
-            if not np.array_equal(self.move(action)[0], self.grid)
+            if not np.array_equal(self.move(action, grid)[0], grid)
         ]
 
-    def move(self, action):
+    def move(self, action, grid):
         match action:
             case "LEFT":
-                new_grid, reward = self.merge_left_rows(self.grid)
+                new_grid, reward = self.merge_left_rows(grid)
             case "RIGHT":
-                new_grid, reward = self.merge_left_rows(np.fliplr(self.grid))
+                new_grid, reward = self.merge_left_rows(np.fliplr(grid))
                 new_grid = np.fliplr(new_grid)
             case "UP":
-                new_grid, reward = self.merge_left_rows(self.grid.T)
+                new_grid, reward = self.merge_left_rows(grid.T)
                 new_grid = new_grid.T
             case "DOWN":
-                new_grid, reward = self.merge_left_rows(np.fliplr(self.grid.T))
+                new_grid, reward = self.merge_left_rows(np.fliplr(grid.T))
                 new_grid = np.fliplr(new_grid).T
 
         return new_grid, reward

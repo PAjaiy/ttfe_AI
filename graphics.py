@@ -33,7 +33,7 @@ if __name__ == "__main__":
                 
                 elif event.type == pygame.KEYDOWN:
                     if event.key in KEY_ACTIONS and game_running:
-                        new_grid, reward = game_object.move(KEY_ACTIONS[event.key])
+                        new_grid, reward = game_object.move(KEY_ACTIONS[event.key], game_object.grid)
                         game_object.grid = new_grid
                         game_object.score += reward
                         game_object.spawn_tile()
