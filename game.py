@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
+import random
 import pygame
-import numpy as np
 
 TILE_COLORS = {
     2: (238, 228, 218),
@@ -58,7 +58,7 @@ class Board:
     pixel_width: int = field(init=False)
     pixel_height: int = field(init=False)
     font: pygame.font.Font = field(init=False)
-    grid: np.ndarray = field(init=False)
+    grid: list = field(init=False)
 
     def __post_init__(self):
         self.pixel_width = (
@@ -70,7 +70,7 @@ class Board:
             + self.display.padding * (self.config.height + 1)
         )
         self.font = pygame.font.Font("ClearSans-Bold.ttf", 50)
-        self.grid = np.zeros((self.config.height, self.config.width), dtype=np.int16)
+        self.grid = [[0 for _ in range(4)] for _ in range(4)]
 
     def draw_cell(self, left, top, row, column, color, surface, value = None):
         cell_left = left + self.display.padding * (column + 1) + self.display.tile_size * column
@@ -92,15 +92,20 @@ class Board:
             for column in range(self.config.width):
                 self.draw_cell(left, top, row, column, self.display.cell_color, surface)
 
-        for tile_row, tile_column in np.argwhere(self.grid != 0):
-            tile_number = self.grid[tile_row, tile_column]
+        numbered_cells = []
+        for i in range(4):
+            for j in range(4):
+                if self.grid[i][j] != 0: numbered_cells.append((i, j))
+        
+        for tile_row, tile_column in numbered_cells:
+            tile_number = self.grid[tile_row][tile_column]
             tile_color = TILE_COLORS.get(tile_number, (60, 50, 50))
             self.draw_cell(left, top, tile_row, tile_column, tile_color, surface, tile_number)
 
 @dataclass
 class GameEnvironment:
     board_config: BoardConfig = field(default_factory=BoardConfig)
-    grid: np.ndarray = field(init=False)
+    hash: int = field(init=False)
     score: int = field(init=False)
     highest_tile: int = field(init=False)
 
@@ -108,20 +113,31 @@ class GameEnvironment:
         self.reset()
 
     def get_state(self):
-        return self.grid.copy()
+        return self.hash
     
     def get_highest_tile(self):
-        return np.max(self.grid)
+        highest_tile = 0
+        for i in range(16):
+            tile = (self.hash >> (5 * i)) & 31
+            if tile > highest_tile: highest_tile = tile
+        return highest_tile
 
     def spawn_tile(self):
-        empty_cells = np.argwhere(self.grid == 0)
+        empty_cells = []
+        for i in range(16):
+            tile = (self.hash >> (5 * i)) & 31
+            if tile == 0: empty_cells.append(i)
+
         if len(empty_cells) == 0: return
 
-        tile_row, tile_column = empty_cells[np.random.randint(len(empty_cells))]
-        self.grid[tile_row, tile_column] = np.random.choice([2, 4], p=[0.9, 0.1])
+        tile_index = empty_cells[random.randrange(len(empty_cells))]
+        mask = 31 << (5 * tile_index)
+        value = random.choices([1, 2], weights=[0.9, 0.1], k=1)[0]
+
+        self.hash = (self.hash & ~mask) | (value << (5 * tile_index))
     
     def reset(self):
-        self.grid = np.zeros((self.board_config.height, self.board_config.width), dtype=np.int16)
+        self.hash = 0
         self.score = 0
 
         self.spawn_tile()
@@ -130,72 +146,160 @@ class GameEnvironment:
         self.highest_tile = self.get_highest_tile()
         return self.get_state()
 
-    def merge_left(self, tile_array):
-        tiles = tile_array[tile_array != 0].tolist()
+    def encode_grid(self, grid):
+        hash = 0
+        count = 0
+        for row in grid:
+            for cell in row:
+                value = cell.bit_length() - 1 if cell else 0
+                hash |= value << (5 * count)
+                count += 1
+        return hash
+
+    def decode_grid(self, hash):
+        grid = []
+        for i in range(4):
+            row = []
+            for j in range(4):
+                value = hash & 31
+                row.append(1 << value if value else 0)
+                hash >>= 5
+            grid.append(row)
+        return grid
+
+    def get_row(self, hash, row_index):
+        row = []
+        for col_index in range(4):
+            i = 4 * row_index + col_index
+            row.append((hash >> (5 * i)) & 31)
+        return row
+    
+    def set_row(self, hash, row_index, row):
+        for col_index in range(4):
+            i = 4 * row_index + col_index
+            mask = 31 << (5 * i)
+            hash = (hash & ~mask) | (row[col_index] << (5 * i))
+        return hash
+
+    def get_column(self, hash, col_index):
+        column = []
+        for row_index in range(4):
+            i = 4 * row_index + col_index
+            column.append((hash >> (5 * i)) & 31)
+        return column
+    
+    def set_column(self, hash, col_index, column):
+        for row_index in range(4):
+            i = 4 * row_index + col_index
+            mask = 31 << (5 * i)
+            hash = (hash & ~mask) | (column[row_index] << (5 * i))
+        return hash
+
+    def merge_left(self, row):
+        tiles = [x for x in row if x != 0]
         merged = []
         score_gained = 0
 
         i = 0
         while i < len(tiles):
             if i + 1 < len(tiles) and tiles[i] == tiles[i+1]:
-                new_value = tiles[i] * 2
-                merged.append(new_value)
-                score_gained += new_value
+                merged.append(tiles[i]+1)
+                score_gained +=  2**(tiles[i]+1)
                 i += 2
             else:
                 merged.append(tiles[i])
                 i += 1
         
-        new_row = np.array(
-            merged + [0] * (len(tile_array) - len(merged)),
-            dtype=tile_array.dtype
-        )
-
+        new_row = merged + [0] * (len(row) - len(merged))
         return new_row, score_gained
 
-    def merge_left_rows(self, grid):
-        results = [self.merge_left(row) for row in grid]
+    def merge_left_rows(self, hash):
+        score_gained = 0
 
-        new_grid = np.array([result[0] for result in results])
-        score_gained = sum(result[1] for result in results)
+        for i in range(4):
+            current_row = self.get_row(hash, i)
+            new_row, reward = self.merge_left(current_row)
+            hash = self.set_row(hash, i, new_row)
+            score_gained += reward
 
-        return new_grid, score_gained
+        return hash, score_gained
 
-    def get_valid_actions(self, grid):
+    def merge_right_rows(self, hash):
+        score_gained = 0
+
+        for i in range(4):
+            current_row = self.get_row(hash, i)[::-1]
+            new_row, reward = self.merge_left(current_row)
+            hash = self.set_row(hash, i, new_row[::-1])
+            score_gained += reward
+
+        return hash, score_gained
+
+    def merge_up_rows(self, hash):
+        score_gained = 0
+
+        for i in range(4):
+            current_column = self.get_column(hash, i)
+            new_column, reward = self.merge_left(current_column)
+            hash = self.set_column(hash, i, new_column)
+            score_gained += reward
+
+        return hash, score_gained
+
+    def merge_down_rows(self, hash):
+        score_gained = 0
+
+        for i in range(4):
+            current_column = self.get_column(hash, i)[::-1]
+            new_column, reward = self.merge_left(current_column)
+            hash = self.set_column(hash, i, new_column[::-1])
+            score_gained += reward
+
+        return hash, score_gained
+
+    def get_valid_moves(self, hash):
         actions = ["LEFT", "RIGHT", "UP", "DOWN"]
+        valid_moves = []
 
-        return [
-            action for action in actions
-            if not np.array_equal(self.move(action, grid)[0], grid)
-        ]
+        for action in actions:
+            new_hash, reward = self.move(action, hash)
 
-    def move(self, action, grid):
+            if new_hash != hash:
+                valid_moves.append((action, new_hash, reward))
+
+        return valid_moves
+
+    def move(self, action, hash):
         match action:
             case "LEFT":
-                new_grid, reward = self.merge_left_rows(grid)
+                hash, reward = self.merge_left_rows(hash)
             case "RIGHT":
-                new_grid, reward = self.merge_left_rows(np.fliplr(grid))
-                new_grid = np.fliplr(new_grid)
+                hash, reward = self.merge_right_rows(hash)
             case "UP":
-                new_grid, reward = self.merge_left_rows(grid.T)
-                new_grid = new_grid.T
+                hash, reward = self.merge_up_rows(hash)
             case "DOWN":
-                new_grid, reward = self.merge_left_rows(np.fliplr(grid.T))
-                new_grid = np.fliplr(new_grid).T
+                hash, reward = self.merge_down_rows(hash)
 
-        return new_grid, reward
+        return hash, reward
     
-    def is_game_over(self):
-        grid = self.grid
+    def is_game_over(self, hash):
+        for i in range(16):
+            if ((hash >> (5 * i)) & 31) == 0:
+                return False
 
-        if np.any(grid == 0):
-            return False
+        for row_index in range(4):
+            for col_index in range(3):
+                i = 4 * row_index + col_index
+                a = (hash >> (5 * i)) & 31
+                b = (hash >> (5 * (i + 1))) & 31
+                if a == b: return False
 
-        horizontal_matches = grid[:, :-1] == grid[:, 1:]
-        vertical_matches = grid[:-1, :] == grid[1:, :]
-
-        if np.any(horizontal_matches) or np.any(vertical_matches):
-            return False
+        for row_index in range(3):
+            for col_index in range(4):
+                i = 4 * row_index + col_index
+                a = (hash >> (5 * i)) & 31
+                b = (hash >> (5 * (i + 4))) & 31
+                if a == b: return False
 
         return True
 
@@ -222,7 +326,7 @@ class Game(GameEnvironment):
     def draw_game(self, surface, value):
         board_top = self.screen_config.height - self.board.pixel_height - self.screen_config.padding
 
-        self.board.grid = self.grid
+        self.board.grid = self.decode_grid(self.hash)
         self.board.draw_board(self.screen_config.padding, board_top, surface)
 
         text_color = (119, 110, 101)

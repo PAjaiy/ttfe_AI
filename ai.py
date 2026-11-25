@@ -1,4 +1,4 @@
-import numpy as np
+from functools import lru_cache
 
 class HeuristicsAI:
     def __init__(self, environment, w1 = 1, w2 = 0.1, w3 = 0.015):
@@ -7,8 +7,10 @@ class HeuristicsAI:
         self.w2 = w2
         self.w3 = w3
 
-    def monotonicity(self, norm_grid):
-        penalty = 0
+    @lru_cache(maxsize=100000)
+    def calculate_penalties(self, hash):
+        monotonic_penalty = 0
+        smooth_penalty = 0
 
         for i in range(4):
             row_asc = 0
@@ -17,11 +19,12 @@ class HeuristicsAI:
             col_desc = 0
 
             for j in range(3):
-                a = norm_grid[i][j]
-                b = norm_grid[i][j+1]
-
-                c = norm_grid[j][i]
-                d = norm_grid[j+1][i]
+                a_index = 4 * i + j
+                c_index = 4 * j + i
+                a = (hash >> (5 * a_index)) & 31
+                b = (hash >> (5 * (a_index + 1))) & 31
+                c = (hash >> (5 * c_index)) & 31
+                d = (hash >> (5 * (c_index + 4))) & 31
 
                 if a > b:
                     row_asc += a - b
@@ -32,62 +35,38 @@ class HeuristicsAI:
                     col_asc += c - d
                 else:
                     col_desc += d - c
-
-            penalty -= min(row_asc, row_desc)
-            penalty -= min(col_asc, col_desc)
-
-        return penalty
-
-    def smoothness(self, norm_grid):
-        penalty = 0
-
-        for i in range(4):
-            for j in range(3):
-                a = norm_grid[i][j]
-                b = norm_grid[i][j+1]
-
-                c = norm_grid[j][i]
-                d = norm_grid[j+1][i]
-
+                
                 if a != 0 and b != 0:
-                    penalty -= abs(a - b)
+                    smooth_penalty -= abs(a - b)
 
                 if c != 0 and d != 0:
-                    penalty -= abs(c - d)
-
-        return penalty
-
-    def evaluate(self, grid):
-        empty_count = 0
-        norm_grid = []
-
-        for row in grid:
-            norm_row = []
-
-            for x in row:
-                if x == 0:
-                    empty_count += 1
-                    norm_row.append(0)
-                else:
-                    norm_row.append(int(x).bit_length() - 1)
+                    smooth_penalty -= abs(c - d)
             
-            norm_grid.append(norm_row)
+            monotonic_penalty -= min(row_asc, row_desc)
+            monotonic_penalty -= min(col_asc, col_desc)
+
+        return monotonic_penalty, smooth_penalty
+
+    def evaluate(self, hash):
+        empty_count = 0
+        
+        for i in range(16):
+            tile = (hash >> (5 * i)) & 31
+            if tile == 0: empty_count += 1
         
         p1 = empty_count
-        p2 = self.monotonicity(norm_grid)
-        p3 = self.smoothness(norm_grid)
+        p2, p3 = self.calculate_penalties(hash)
         return p1 * self.w1 + p2 * self.w2 + p3 * self.w3
 
-    def choose_action(self, grid):
-        valid_actions = self.environment.get_valid_actions(grid)
-        if not valid_actions: return None
+    def choose_action(self, hash):
+        valid_moves = self.environment.get_valid_moves(hash)
+        if not valid_moves: return None
 
         best_action = None
         best_value = float("-inf")
 
-        for action in valid_actions:
-            new_grid, _ = self.environment.move(action, grid)
-            value = self.evaluate(new_grid)
+        for action, new_hash, reward in valid_moves:
+            value = self.evaluate(new_hash)
 
             if value > best_value:
                 best_value = value
@@ -96,8 +75,8 @@ class HeuristicsAI:
         return best_action
 
     def step(self, action):
-        new_grid, reward = self.environment.move(action, self.environment.grid)
-        self.environment.grid = new_grid
+        new_hash, reward = self.environment.move(action, self.environment.hash)
+        self.environment.hash = new_hash
         self.environment.score += reward
         self.environment.spawn_tile()
         return self.environment.get_state(), reward
@@ -106,57 +85,48 @@ class ExpectiMaxAI(HeuristicsAI):
     def __init__(self, environment, w1=1, w2=0.1, w3=0.015, depth=3):
         super().__init__(environment, w1, w2, w3)
         self.depth = depth
-
-    def generate_next_grids(self, grid):
-        empty_coords = np.argwhere(grid == 0)
-        empty_count = len(empty_coords)
-        if empty_count == 0: return 0, [], []
-
-        next_2_grids = []
-        next_4_grids = []
-
-        for empty_row, empty_column in empty_coords:
-            next_2_grid = grid.copy()
-            next_4_grid = grid.copy()
-
-            next_2_grid[empty_row, empty_column] = 2
-            next_4_grid[empty_row, empty_column] = 4
-            
-            next_2_grids.append(next_2_grid)
-            next_4_grids.append(next_4_grid)
-
-        return empty_count, next_2_grids, next_4_grids
         
-    def chance_node(self, grid, depth):
-        N, next_2_grids, next_4_grids = self.generate_next_grids(grid)
+    def chance_node(self, hash, depth):
+        empty_coords = []
+        
+        for i in range(16):
+            tile = (hash >> (5 * i)) & 31
+            if tile == 0: empty_coords.append(i)
 
-        if N == 0: return self.evaluate(grid)
-        return (
-            0.9 * sum([self.max_node(grid_2, depth) for grid_2 in next_2_grids]) +
-            0.1 * sum([self.max_node(grid_4, depth) for grid_4 in next_4_grids])
-        ) / N
+        N = len(empty_coords)
+        if N == 0: return self.evaluate(hash)
 
-    def max_node(self, grid, depth):
-        if depth == 0: return self.evaluate(grid)
+        total = 0
 
-        valid_actions = self.environment.get_valid_actions(grid)
-        if not valid_actions: return self.evaluate(grid)
+        for empty_coord in empty_coords:
+            next_hash =  hash | (1 << (5 * empty_coord))
+            total += 0.9 * self.max_node(next_hash, depth)
+
+            next_hash =  hash | (2 << (5 * empty_coord))
+            total += 0.1 * self.max_node(next_hash, depth)
+        
+        return total / N
+
+    def max_node(self, hash, depth):
+        if depth == 0: return self.evaluate(hash)
+
+        valid_moves = self.environment.get_valid_moves(hash)
+        if not valid_moves: return self.evaluate(hash)
 
         return max(
-            [self.chance_node(self.environment.move(action, grid)[0], depth-1)
-             for action in valid_actions]
+            self.chance_node(new_hash, depth-1)
+            for action, new_hash, reward in valid_moves
         )
 
-    def choose_action(self, grid):
-        valid_actions = self.environment.get_valid_actions(grid)
-        if not valid_actions: return None
+    def choose_action(self, hash):
+        valid_moves = self.environment.get_valid_moves(hash)
+        if not valid_moves: return None
 
         best_action = None
         best_value = float("-inf")
 
-        for action in valid_actions:
-            new_grid = self.environment.move(action, grid)[0]
-            value = self.chance_node(new_grid, self.depth - 1)
+        for action, new_hash, reward in valid_moves:
+            value = self.chance_node(new_hash, self.depth - 1)
 
             if value > best_value:
                 best_value = value
