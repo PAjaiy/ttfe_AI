@@ -1,4 +1,3 @@
-import cProfile
 import graphics
 import time
 import pygame

@@ -1,6 +1,8 @@
 import pygame
 import game
 
+# Press R to reset game, and the arrow keys to make moves.
+
 # constants
 KEY_ACTIONS = {
     pygame.K_UP: "UP",
