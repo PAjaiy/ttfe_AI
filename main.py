@@ -9,16 +9,19 @@ environment = game.GameEnvironment()
 
 # WARNING: do not pass any board dimensions other than 4x4 as of now
 
-# remove comment for raw heuristics-based AI (~ 0.5 seconds per iteration)
+# toggle comment for random AI (~ 0.11 seconds per iteration)
+ttfe_ai = ai.RandomAI(environment)
+
+# toggle comment for raw heuristics-based AI (~ 0.5 seconds per iteration)
 # the weights correspond to empty space, monotonicity and smoothness
 # ttfe_ai = ai.HeuristicsAI(environment, 1, 0.1, 0.015)
 
-# remove comment for expectimax-based AI (~ 2.5 seconds per iteration at depth 1)
+# toggle comment for expectimax-based AI (~ 2.5 seconds per iteration at depth 1)
 # inherited from HeuristicsAI; has an additional depth parameter
-ttfe_ai = ai.ExpectiMaxAI(environment, 1, 0.1, 0.015, depth = 2)
-# additional stats:
+# ttfe_ai = ai.ExpectiMaxAI(environment, 1, 0.1, 0.015, depth = 2)
+# additional stats: ~2 minutes per iteration at depth 2
 
-iteration_count = 5
+iteration_count = 50
 total_moves = 0
 total_score = 0
 total_time = 0

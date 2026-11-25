@@ -1,4 +1,23 @@
 from functools import lru_cache
+import random
+
+class RandomAI:
+    def __init__(self, environment):
+        self.environment = environment
+
+    def choose_action(self, hash):
+        valid_moves = self.environment.get_valid_moves(hash)
+        if not valid_moves: return None
+
+        valid_actions = [action for action, new_hash, reward in valid_moves]
+        return random.choice(valid_actions)
+
+    def step(self, action):
+        new_hash, reward = self.environment.move(action, self.environment.hash)
+        self.environment.hash = new_hash
+        self.environment.score += reward
+        self.environment.spawn_tile()
+        return self.environment.get_state(), reward
 
 class HeuristicsAI:
     def __init__(self, environment, w1 = 1, w2 = 0.1, w3 = 0.015):
