@@ -23,7 +23,7 @@ if __name__ == "__main__":
     screen = pygame.display.set_mode((screen_width, screen_height))
 
     while running:
-        game_object = game.Game(board_config=game.BoardConfig(width=4, height=4))
+        game_object = game.Game(board_config=game.BoardConfig(size=4))
         game_running = True
         restart = False
 

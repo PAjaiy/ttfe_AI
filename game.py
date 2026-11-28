@@ -38,8 +38,7 @@ class ScreenConfig:
 
 @dataclass(frozen=True)
 class BoardConfig:
-    width: int = 4
-    height: int = 4
+    size: int = 4
 
 @dataclass(frozen=True)
 class BoardDisplayConfig:
@@ -62,15 +61,15 @@ class Board:
 
     def __post_init__(self):
         self.pixel_width = (
-            self.config.width * self.display.tile_size
-            + self.display.padding * (self.config.width + 1)
+            self.config.size * self.display.tile_size
+            + self.display.padding * (self.config.size + 1)
         )
         self.pixel_height = (
-            self.config.height * self.display.tile_size
-            + self.display.padding * (self.config.height + 1)
+            self.config.size * self.display.tile_size
+            + self.display.padding * (self.config.size + 1)
         )
         self.font = pygame.font.Font("ClearSans-Bold.ttf", 50)
-        self.grid = [[0 for _ in range(4)] for _ in range(4)]
+        self.grid = [[0 for _ in range(self.config.size)] for _ in range(self.config.size)]
 
     def draw_cell(self, left, top, row, column, color, surface, value = None):
         cell_left = left + self.display.padding * (column + 1) + self.display.tile_size * column
@@ -88,13 +87,13 @@ class Board:
         board_rect = pygame.Rect(left, top, self.pixel_width, self.pixel_height)
         pygame.draw.rect(surface, self.display.board_color, board_rect, border_radius = self.display.board_radius)
         
-        for row in range(self.config.height):
-            for column in range(self.config.width):
+        for row in range(self.config.size):
+            for column in range(self.config.size):
                 self.draw_cell(left, top, row, column, self.display.cell_color, surface)
 
         numbered_cells = []
-        for i in range(4):
-            for j in range(4):
+        for i in range(self.config.size):
+            for j in range(self.config.size):
                 if self.grid[i][j] != 0: numbered_cells.append((i, j))
         
         for tile_row, tile_column in numbered_cells:
@@ -117,14 +116,14 @@ class GameEnvironment:
     
     def get_highest_tile(self):
         highest_tile = 0
-        for i in range(16):
+        for i in range(self.board_config.size ** 2):
             tile = (self.hash >> (5 * i)) & 31
             if tile > highest_tile: highest_tile = tile
         return highest_tile
 
     def spawn_tile(self):
         empty_cells = []
-        for i in range(16):
+        for i in range(self.board_config.size ** 2):
             tile = (self.hash >> (5 * i)) & 31
             if tile == 0: empty_cells.append(i)
 
@@ -158,9 +157,9 @@ class GameEnvironment:
 
     def decode_grid(self, hash):
         grid = []
-        for i in range(4):
+        for i in range(self.board_config.size):
             row = []
-            for j in range(4):
+            for j in range(self.board_config.size):
                 value = hash & 31
                 row.append(1 << value if value else 0)
                 hash >>= 5
@@ -169,28 +168,28 @@ class GameEnvironment:
 
     def get_row(self, hash, row_index):
         row = []
-        for col_index in range(4):
-            i = 4 * row_index + col_index
+        for col_index in range(self.board_config.size):
+            i = self.board_config.size * row_index + col_index
             row.append((hash >> (5 * i)) & 31)
         return row
     
     def set_row(self, hash, row_index, row):
-        for col_index in range(4):
-            i = 4 * row_index + col_index
+        for col_index in range(self.board_config.size):
+            i = self.board_config.size * row_index + col_index
             mask = 31 << (5 * i)
             hash = (hash & ~mask) | (row[col_index] << (5 * i))
         return hash
 
     def get_column(self, hash, col_index):
         column = []
-        for row_index in range(4):
-            i = 4 * row_index + col_index
+        for row_index in range(self.board_config.size):
+            i = self.board_config.size * row_index + col_index
             column.append((hash >> (5 * i)) & 31)
         return column
     
     def set_column(self, hash, col_index, column):
-        for row_index in range(4):
-            i = 4 * row_index + col_index
+        for row_index in range(self.board_config.size):
+            i = self.board_config.size * row_index + col_index
             mask = 31 << (5 * i)
             hash = (hash & ~mask) | (column[row_index] << (5 * i))
         return hash
@@ -216,7 +215,7 @@ class GameEnvironment:
     def merge_left_rows(self, hash):
         score_gained = 0
 
-        for i in range(4):
+        for i in range(self.board_config.size):
             current_row = self.get_row(hash, i)
             new_row, reward = self.merge_left(current_row)
             hash = self.set_row(hash, i, new_row)
@@ -227,7 +226,7 @@ class GameEnvironment:
     def merge_right_rows(self, hash):
         score_gained = 0
 
-        for i in range(4):
+        for i in range(self.board_config.size):
             current_row = self.get_row(hash, i)[::-1]
             new_row, reward = self.merge_left(current_row)
             hash = self.set_row(hash, i, new_row[::-1])
@@ -238,7 +237,7 @@ class GameEnvironment:
     def merge_up_rows(self, hash):
         score_gained = 0
 
-        for i in range(4):
+        for i in range(self.board_config.size):
             current_column = self.get_column(hash, i)
             new_column, reward = self.merge_left(current_column)
             hash = self.set_column(hash, i, new_column)
@@ -249,7 +248,7 @@ class GameEnvironment:
     def merge_down_rows(self, hash):
         score_gained = 0
 
-        for i in range(4):
+        for i in range(self.board_config.size):
             current_column = self.get_column(hash, i)[::-1]
             new_column, reward = self.merge_left(current_column)
             hash = self.set_column(hash, i, new_column[::-1])
@@ -283,20 +282,20 @@ class GameEnvironment:
         return hash, reward
     
     def is_game_over(self, hash):
-        for i in range(16):
+        for i in range(self.board_config.size ** 2):
             if ((hash >> (5 * i)) & 31) == 0:
                 return False
 
-        for row_index in range(4):
-            for col_index in range(3):
-                i = 4 * row_index + col_index
+        for row_index in range(self.board_config.size):
+            for col_index in range(self.board_config.size - 1):
+                i = self.board_config.size * row_index + col_index
                 a = (hash >> (5 * i)) & 31
                 b = (hash >> (5 * (i + 1))) & 31
                 if a == b: return False
 
-        for row_index in range(3):
-            for col_index in range(4):
-                i = 4 * row_index + col_index
+        for row_index in range(self.board_config.size - 1):
+            for col_index in range(self.board_config.size):
+                i = self.board_config.size * row_index + col_index
                 a = (hash >> (5 * i)) & 31
                 b = (hash >> (5 * (i + 4))) & 31
                 if a == b: return False
@@ -316,9 +315,9 @@ class Game(GameEnvironment):
 
         self.score = 0
         self.font = pygame.font.Font("ClearSans-Bold.ttf", 50)
-        board_padding = max(5, 15 - self.board_config.width)
+        board_padding = max(5, 15 - self.board_config.size)
         tile_size = (self.screen_config.width - self.screen_config.padding * 2 - \
-                     board_padding * (self.board_config.width + 1)) // self.board_config.width
+                     board_padding * (self.board_config.size + 1)) // self.board_config.size
         
         self.board_display_config = BoardDisplayConfig(tile_size = tile_size, padding = board_padding)
         self.board = Board(self.board_config, self.board_display_config)

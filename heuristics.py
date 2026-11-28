@@ -28,22 +28,23 @@ class HeuristicsAI:
 
     @lru_cache(maxsize=100000)
     def calculate_penalties(self, hash):
+        size = self.environment.board_config.size
         monotonic_penalty = 0
         smooth_penalty = 0
 
-        for i in range(4):
+        for i in range(size):
             row_asc = 0
             row_desc = 0
             col_asc = 0
             col_desc = 0
 
-            for j in range(3):
-                a_index = 4 * i + j
-                c_index = 4 * j + i
+            for j in range(size - 1):
+                a_index = size * i + j
+                c_index = size * j + i
                 a = (hash >> (5 * a_index)) & 31
                 b = (hash >> (5 * (a_index + 1))) & 31
                 c = (hash >> (5 * c_index)) & 31
-                d = (hash >> (5 * (c_index + 4))) & 31
+                d = (hash >> (5 * (c_index + size))) & 31
 
                 if a > b:
                     row_asc += a - b
@@ -67,9 +68,10 @@ class HeuristicsAI:
         return monotonic_penalty, smooth_penalty
 
     def evaluate(self, hash):
+        size = self.environment.board_config.size
         empty_count = 0
         
-        for i in range(16):
+        for i in range(size ** 2):
             tile = (hash >> (5 * i)) & 31
             if tile == 0: empty_count += 1
         
@@ -106,9 +108,10 @@ class ExpectiMaxAI(HeuristicsAI):
         self.depth = depth
         
     def chance_node(self, hash, depth):
+        size = self.environment.board_config.size
         empty_coords = []
         
-        for i in range(16):
+        for i in range(size ** 2):
             tile = (hash >> (5 * i)) & 31
             if tile == 0: empty_coords.append(i)
 

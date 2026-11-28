@@ -2,25 +2,64 @@ import graphics
 import time
 import pygame
 import game
-import ai
+import genetics
+import heuristics
 
-environment = game.GameEnvironment()
+BOARD_SIZE = 5
 
-# WARNING: do not pass any board dimensions other than 4x4 as of now
+board_config = game.BoardConfig(size=BOARD_SIZE)
+environment = game.GameEnvironment(board_config=board_config)
 
-# toggle comment for random AI (~ 0.11 seconds per iteration)
-ttfe_ai = ai.RandomAI(environment)
+# NOTE: any size works, but pass a 5x5 or more at your own risk 
 
-# toggle comment for raw heuristics-based AI (~ 0.5 seconds per iteration)
-# the weights correspond to empty space, monotonicity and smoothness
-# ttfe_ai = ai.HeuristicsAI(environment, 1, 0.1, 0.015)
+def is_float(value):
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
 
-# toggle comment for expectimax-based AI (~ 2.5 seconds per iteration at depth 1)
-# inherited from HeuristicsAI; has an additional depth parameter
-# ttfe_ai = ai.ExpectiMaxAI(environment, 1, 0.1, 0.015, depth = 2)
-# additional stats: ~2 minutes per iteration at depth 2
+def safe_int_input(message, length):
+    while True:
+        out = input(message)
+        if out.isdigit() and 1 <= int(out) <= length:
+            return int(out)
+        print("Input either not an integer or is out of range.")
+        
+def safe_float_input(message, lower, upper):
+    while True:
+        out = input(message)
+        if is_float(out) and lower <= float(out) <= upper:
+            return float(out)
+        print("Input either not a floating-point number or is out of range.")
 
-iteration_count = 50
+ai_list = ["Random", "Raw Heuristics", "Heuristics + Expectimax", "Heuristics + Genetic Optimization"]
+
+for i in range(len(ai_list)):
+    print(f"{i+1}. {ai_list[i]}")
+
+choice_int = safe_int_input(f"Enter a choice (1 - {len(ai_list)}): ", len(ai_list))
+iteration_count = safe_int_input(f"Enter the iteration count (1-500): ", 500)
+
+match choice_int:
+    case 1:
+        ttfe_ai = heuristics.RandomAI(environment)
+    case 2:
+        w1 = safe_float_input("Enter the weight given for empty space (0.0 - 1.0): ", 0, 1)
+        w2 = safe_float_input("Enter the weight given for monotonicity (0.0 - 1.0): ", 0, 1)
+        w3 = safe_float_input("Enter the weight given for smoothness (0.0 - 1.0): ", 0, 1)
+        ttfe_ai = heuristics.HeuristicsAI(environment, w1, w2, w3)
+    case 3:
+        w1 = safe_float_input("Enter the weight given for empty space (0.0 - 1.0): ", 0, 1)
+        w2 = safe_float_input("Enter the weight given for monotonicity (0.0 - 1.0): ", 0, 1)
+        w3 = safe_float_input("Enter the weight given for smoothness (0.0 - 1.0): ", 0, 1)
+        depth = safe_int_input("Enter the search depth (1 or 2): ", 2)
+        ttfe_ai = heuristics.ExpectiMaxAI(environment, w1, w2, w3, depth = depth)
+    case 4:
+        raise ValueError("work in progress")
+    case _:
+        raise ValueError("Something went wrong with the input.")
+
 total_moves = 0
 total_score = 0
 total_time = 0
@@ -75,7 +114,7 @@ if option.lower() != "q":
     screen_height = 800
     screen = pygame.display.set_mode((screen_width, screen_height))
 
-    game_object = game.Game(board_config=game.BoardConfig(width=4, height=4))
+    game_object = game.Game(board_config=game.BoardConfig(size=BOARD_SIZE))
     clock = pygame.time.Clock()
 
     for hash, score in best_history:
